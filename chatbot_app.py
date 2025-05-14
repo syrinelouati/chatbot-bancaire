@@ -11,6 +11,8 @@ import pandas as pd
 from sentence_transformers import SentenceTransformer
 from sklearn.neighbors import NearestNeighbors
 import streamlit as st
+import os
+os.environ["STREAMLIT_WATCHER_TYPE"] = "none"
 
 # Titre
 st.title("🤖 Chatbot Bancaire Multilingue")
