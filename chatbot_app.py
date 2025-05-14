@@ -48,9 +48,9 @@ if st.button("Obtenir la réponse"):
         distance, index = nn_model.kneighbors(input_embedding)
 
         response = df.iloc[index[0][0]]["Answer"]
-        classe = df.iloc[index[0][0]]["Classe"]
+        class = df.iloc[index[0][0]]["Class"]
 
         st.success(f"**Réponse** : {response}")
-        st.info(f"📂 **Classe** : {classe}")
+        st.info(f"📂 **Class** : {class}")
     else:
         st.warning("⚠️ Veuillez fournir votre profil et votre question.")
