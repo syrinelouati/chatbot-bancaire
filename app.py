@@ -15,7 +15,7 @@ from sklearn.neighbors import NearestNeighbors
 
 # CONFIG
 st.set_page_config(page_title="Chatbot Bancaire + Extraction Factures", layout="wide")
-st.title("💬 Chatbot Bancaire Multilingue + 🧾 Extraction de Factures")
+st.title("💬 Chatbot Bancaire")
 
 # === INITIALISATION CHATBOT ===
 @st.cache_resource
