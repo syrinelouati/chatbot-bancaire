@@ -137,14 +137,28 @@ def validate_invoice_fields(data):
 tab1, tab2 = st.tabs(["📩 Chatbot Bancaire", "📤 Extraction Facture"])
 
 with tab1:
-    st.subheader("Poser votre question")
-    user_input = st.text_input("💡 Posez une question bancaire")
+    st.subheader("💬 Assistant Bancaire Intelligent")
+
+    # Greeting selon l'heure
+    now = datetime.now().hour
+    if now < 12:
+        greeting = "☀️ Bonjour !"
+    elif now < 18:
+        greeting = "🌤️ Bon après-midi !"
+    else:
+        greeting = "🌙 Bonsoir !"
+
+    st.markdown(f"### {greeting} Comment puis-je vous aider aujourd’hui ?")
+
+    # Zone de question
+    user_input = st.text_input("💡 Posez une question bancaire ci-dessous :")
+
     if user_input:
         lang = detect(user_input)
         query = model.encode(user_input)
         distances, indices = nn_models[lang].kneighbors([query])
         idx = indices[0][0]
-        st.write("### Réponse :")
+        st.write("### 📌 Réponse suggérée :")
         st.success(df.iloc[idx][f"Answer_{lang}" if lang != "en" else "Answer"])
 
 with tab2:
@@ -159,3 +173,4 @@ with tab2:
             st.markdown("### ✅ Résultats de validation")
             for check in validate_invoice_fields(extracted_data):
                 st.write(f"- {check}")
+st.image("https://cdn-icons-png.flaticon.com/512/4712/4712109.png", width=60)
