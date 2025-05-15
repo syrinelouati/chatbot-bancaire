@@ -72,8 +72,8 @@ if st.button("Obtenir la réponse"):
               intro = f"🗣️ بصفتك **{profil}**، يمكنك :"
             else:
               intro = f"🗣️ As a **{profil}**, you can:"
-st.success(f"{intro}\n\n{answer}")
-            st.info(f"📂 Classe : {classe}")
+              st.success(f"{intro}\n\n{answer}")
+              st.info(f"📂 Classe : {classe}")
 
         except Exception as e:
             st.error("Une erreur est survenue lors du traitement de votre question.")
