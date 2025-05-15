@@ -20,7 +20,7 @@ from groq import Groq
  
 # --- Configuration Streamlit
 st.set_page_config(page_title="Chatbot Bancaire + Extraction Invoice", layout="centered")
-st.title("💬 Chatbot Bancaire Multilingue + Extraction de Factures")
+st.title("💬 Chatbot Bancaire")
  
 # Initialiser l'historique de chat
 if "messages" not in st.session_state:
@@ -134,7 +134,7 @@ def generate_answer(user_question):
 # ---- Streamlit UI ----
  
 # Onglets pour choisir le mode
-mode = st.sidebar.selectbox("Choisir le mode :", ["Chatbot Bancaire", "Extraction de Factures"])
+mode = st.sidebar.selectbox("Choisir le mode :", ["Chatbot Bancaire", "Extraction des virements"])
  
 if mode == "Chatbot Bancaire":
     # Afficher l'historique des messages
@@ -153,7 +153,7 @@ if mode == "Chatbot Bancaire":
         with st.chat_message("assistant"):
             st.markdown(response)
  
-elif mode == "Extraction de Factures":
+elif mode == "Extraction des virements":
     st.write("📤 Upload une image de facture (PNG, JPG) à analyser.")
     uploaded_file = st.file_uploader("Choisissez une image...", type=["png", "jpg", "jpeg"])
     if uploaded_file is not None:
