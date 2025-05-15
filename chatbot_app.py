@@ -47,7 +47,7 @@ def build_embeddings(df):
 embeddings, nn_models = build_embeddings(df)
 
 # Interface utilisateur
-user_question = st.text_area("❓ Posez votre question bancaire")
+user_question = st.text_area("Posez votre question bancaire ❓")
 
 if st.button("Obtenir la réponse"):
     if user_question:
