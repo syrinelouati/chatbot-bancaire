@@ -37,7 +37,7 @@ def build_model_and_embeddings(df):
 model, nn_model, question_embeddings = build_model_and_embeddings(df)
 
 # Interface utilisateur
-user_input = st.text_area("❓ Posez votre question bancaire avec votre profil (ex : client - comment ouvrir un compte ?)")
+user_input = st.text_area("❓ Posez votre question ")
 
 if st.button("Obtenir la réponse"):
     if user_input:
@@ -65,7 +65,7 @@ if st.button("Obtenir la réponse"):
                 classe = row["Class"]
 
             # Affichage
-            st.success(f"🗣️ En tant que **{profil}**, tu peux :\n\n{answer}")
+            st.success(f"🗣️ En tant que **{profil}**,\n\n{answer}")
             st.info(f"📂 Classe : {classe}")
 
         except Exception as e:
