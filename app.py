@@ -12,7 +12,7 @@ from groq import Groq
 
 # --- Initialisation
 st.set_page_config(page_title="Chatbot & Extraction Virements", layout="centered")
-st.title("🏦 Chatbot Bancaire + Extraction Virements Structurés")
+st.title("🏦 Chatbot Bancaire")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
