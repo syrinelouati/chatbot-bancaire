@@ -1,15 +1,58 @@
-from groq import Groq
+# -*- coding: utf-8 -*-
 import os
 import json
 import base64
+import pandas as pd
 from datetime import datetime
+from PIL import Image
+import io
 
-# Initialize Groq client
-client = Groq(api_key="TON_API_KEY_ICI")  # Ne jamais exposer une vraie clé API en public
+import streamlit as st
+from groq import Groq
+from langdetect import detect
+from sentence_transformers import SentenceTransformer
+from sklearn.neighbors import NearestNeighbors
 
-def encode_image(image_path):
-    with open(image_path, "rb") as image_file:
-        return base64.b64encode(image_file.read()).decode("utf-8")
+# CONFIG
+st.set_page_config(page_title="Chatbot Bancaire + Extraction Factures", layout="wide")
+st.title("💬 Chatbot Bancaire Multilingue + 🧾 Extraction de Factures")
+
+# === INITIALISATION CHATBOT ===
+@st.cache_resource
+def load_model():
+    return SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+
+@st.cache_data
+def load_data():
+    return pd.read_csv("cleanedTranslatedBankFAQs.csv", usecols=[
+        "Question", "Answer", "Class", "Profile",
+        "Profile_fr", "Profile_ar", "Class_fr", "Class_ar",
+        "Question_fr", "Question_ar", "Answer_fr", "Answer_ar"
+    ])
+
+model = load_model()
+df = load_data()
+
+@st.cache_resource
+def build_embeddings(df):
+    embeddings = {
+        "fr": model.encode(df["Profile_fr"].fillna('') + " - " + df["Question_fr"].fillna('')),
+        "en": model.encode(df["Profile"].fillna('') + " - " + df["Question"].fillna('')),
+        "ar": model.encode(df["Profile_ar"].fillna('') + " - " + df["Question_ar"].fillna(''))
+    }
+    nn_models = {
+        lang: NearestNeighbors(n_neighbors=1, metric="cosine").fit(embeddings[lang])
+        for lang in embeddings
+    }
+    return embeddings, nn_models
+
+embeddings, nn_models = build_embeddings(df)
+
+# === INITIALISATION EXTRACTION FACTURE ===
+client = Groq(api_key="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")
+
+def encode_image_file(uploaded_file):
+    return base64.b64encode(uploaded_file.read()).decode("utf-8")
 
 def extract_invoice_data(base64_image):
     system_prompt = """
@@ -38,7 +81,7 @@ def extract_invoice_data(base64_image):
         ],
         temperature=0.0,
     )
-    return response.choices[0].message.content
+    return json.loads(response.choices[0].message.content)
 
 def convert_french_amount(words):
     french_numbers = {
@@ -52,6 +95,7 @@ def convert_french_amount(words):
         'quatre-vingt': 80, 'quatre-vingt-dix': 90,
         'cent': 100, 'cents': 100, 'mille': 1000
     }
+
     words = words.lower().replace('dinars', '').replace('dinar', '').strip()
     total = current = 0
     for word in words.split():
@@ -65,74 +109,53 @@ def convert_french_amount(words):
                 current += val
     return total + current
 
-def validate_name(name, name_type):
-    if not name or not str(name).strip():
-        return f"❌ Missing {name_type} name"
-    if len(str(name).strip()) < 2:
-        return f"❌ {name_type} name too short"
-    return f"✅ Valid {name_type} name"
-
-def validate_account(account, expected_len, acc_type):
-    if not account:
-        return f"❌ Missing {acc_type} account"
-    if len(str(account)) != expected_len:
-        return f"❌ Invalid {acc_type} account length (expected {expected_len}, got {len(str(account))})"
-    return f"✅ Valid {acc_type} account"
-
 def validate_date(date_str):
     try:
         datetime.strptime(date_str, "%d/%m/%Y")
         return True
-    except (ValueError, TypeError):
+    except:
         return False
 
-def validate_data(data):
-    print("\n--- VALIDATION ---")
-
-    print(f"• {validate_name(data.get('payer', {}).get('name'), 'payer')}")
-    print(f"• {validate_name(data.get('payee', {}).get('name'), 'payee')}")
-    print(f"• {validate_account(data.get('payer', {}).get('account'), 8, 'payer')}")
-    print(f"• {validate_account(data.get('payee', {}).get('account'), 20, 'payee')}")
-
-    date = data.get('date', '')
-    print("• ✅ Valid date" if validate_date(date) else "• ❌ Invalid or missing date")
-
-    if 'amount' in data and 'amount_words' in data:
-        try:
-            converted = convert_french_amount(data['amount_words'])
-            if float(data['amount']) == converted:
-                print("• ✅ Amount matches")
-            else:
-                print(f"• ❌ Amount mismatch (value: {data['amount']}, words: {converted})")
-        except Exception as e:
-            print(f"• ❌ Amount validation error: {str(e)}")
-    else:
-        print("• ❌ Missing amount or amount_words")
-
-def process_invoice(image_path, output_dir):
+def validate_invoice_fields(data):
+    results = []
+    results.append("✅ Payer name" if data['payer']['name'] else "❌ Missing payer name")
+    results.append("✅ Payee name" if data['payee']['name'] else "❌ Missing payee name")
+    results.append("✅ Payer account" if data['payer']['account'] and len(data['payer']['account']) == 8 else "❌ Invalid payer account")
+    results.append("✅ Payee account" if data['payee']['account'] and len(data['payee']['account']) == 20 else "❌ Invalid payee account")
+    results.append("✅ Valid date" if validate_date(data['date']) else "❌ Invalid or missing date")
     try:
-        base64_img = encode_image(image_path)
-        invoice_json = extract_invoice_data(base64_img)
-        data = json.loads(invoice_json)
+        converted = convert_french_amount(data['amount_words'])
+        if float(data['amount']) == converted:
+            results.append("✅ Amount matches")
+        else:
+            results.append(f"❌ Amount mismatch (expected {data['amount']}, got {converted})")
+    except:
+        results.append("❌ Amount parsing error")
+    return results
 
-        os.makedirs(output_dir, exist_ok=True)
-        output_path = os.path.join(
-            output_dir,
-            os.path.basename(image_path).replace(".jpg", ".json").replace(".png", ".json")
-        )
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
+# === INTERFACE STREAMLIT ===
+tab1, tab2 = st.tabs(["📩 Chatbot Bancaire", "📤 Extraction Facture"])
 
-        validate_data(data)
-        return output_path
-    except Exception as e:
-        print(f"Error processing invoice: {str(e)}")
-        return None
+with tab1:
+    st.subheader("Poser votre question")
+    user_input = st.text_input("💡 Posez une question bancaire")
+    if user_input:
+        lang = detect(user_input)
+        query = model.encode(user_input)
+        distances, indices = nn_models[lang].kneighbors([query])
+        idx = indices[0][0]
+        st.write("### Réponse :")
+        st.success(df.iloc[idx][f"Answer_{lang}" if lang != "en" else "Answer"])
 
-# Configuration
-input_dir = "/content"
-output_dir = "/content/extracted_data"
-
-for filename in os.listdir(input_dir):
-    if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
-        process_invoice(os.path.join(input_dir, filename), output_dir)
+with tab2:
+    st.subheader("Uploader une facture à analyser")
+    uploaded_file = st.file_uploader("📎 Déposez une image (.png/.jpg)", type=["png", "jpg", "jpeg"])
+    if uploaded_file:
+        base64_img = encode_image_file(uploaded_file)
+        st.image(uploaded_file, caption="Facture uploadée", use_column_width=True)
+        with st.spinner("🧠 Extraction en cours..."):
+            extracted_data = extract_invoice_data(base64_img)
+            st.json(extracted_data)
+            st.markdown("### ✅ Résultats de validation")
+            for check in validate_invoice_fields(extracted_data):
+                st.write(f"- {check}")
