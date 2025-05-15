@@ -65,7 +65,14 @@ if st.button("Obtenir la réponse"):
                 classe = row["Class"]
 
             # Affichage
-            st.success(f"🗣️ En tant que **{profil}**,\n\n{answer}")
+            # Choisir l’intro selon la langue
+            if lang == 'fr':
+              intro = f"🗣️ En tant que **{profil}**, tu peux :"
+            elif lang == 'ar':
+              intro = f"🗣️ بصفتك **{profil}**، يمكنك :"
+           else:
+              intro = f"🗣️ As a **{profil}**, you can:"
+st.success(f"{intro}\n\n{answer}")
             st.info(f"📂 Classe : {classe}")
 
         except Exception as e:
