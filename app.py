@@ -134,7 +134,7 @@ def validate_invoice_fields(data):
     return results
 
 # === INTERFACE STREAMLIT ===
-tab1, tab2 = st.tabs(["📩 Chatbot Bancaire", "📤 Extraction Facture"])
+tab1, tab2 = st.tabs(["📩 Chatbot Bancaire", "📤 Extraction Virements"])
 
 with tab1:
     st.subheader("💬 Assistant Bancaire Intelligent")
