@@ -2,22 +2,22 @@
 import os
 import json
 import base64
-import pandas as pd
+from datetime import datetime
 from langdetect import detect
+import pandas as pd
 from sentence_transformers import SentenceTransformer
 from sklearn.neighbors import NearestNeighbors
 import streamlit as st
 from groq import Groq
 
-# --- Configuration Streamlit
-st.set_page_config(page_title="Chatbot Bancaire + Extraction Virements", layout="centered")
-st.title("💬 Chatbot & Extraction de Virements")
+# --- Initialisation
+st.set_page_config(page_title="Chatbot & Extraction Virements", layout="centered")
+st.title("🏦 Chatbot Bancaire + Extraction Virements Structurés")
 
-# Initialiser l'historique de chat
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# --- Chargement modèle et données
+# Chargement données & modèles
 @st.cache_resource
 def load_model():
     return SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
@@ -37,9 +37,9 @@ df = load_data()
 @st.cache_resource
 def build_embeddings(df):
     embeddings = {
-        "fr": model.encode(df["Profile_fr"].fillna('') + " - " + df["Question_fr"].fillna(''), show_progress_bar=True),
-        "en": model.encode(df["Profile"].fillna('') + " - " + df["Question"].fillna(''), show_progress_bar=True),
-        "ar": model.encode(df["Profile_ar"].fillna('') + " - " + df["Question_ar"].fillna(''), show_progress_bar=True)
+        "fr": model.encode(df["Profile_fr"].fillna('') + " - " + df["Question_fr"].fillna('')),
+        "en": model.encode(df["Profile"].fillna('') + " - " + df["Question"].fillna('')),
+        "ar": model.encode(df["Profile_ar"].fillna('') + " - " + df["Question_ar"].fillna(''))
     }
     nn_models = {
         lang: NearestNeighbors(n_neighbors=1, metric="cosine").fit(embeddings[lang])
@@ -49,40 +49,17 @@ def build_embeddings(df):
 
 embeddings, nn_models = build_embeddings(df)
 
-# --- Initialiser client Groq
+# Client Groq
 client = Groq(api_key="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")
 
-# --- Fonctions OCR Générales
+# --- Encodage image
 def encode_image(image_path):
-    with open(image_path, "rb") as image_file:
-        return base64.b64encode(image_file.read()).decode("utf-8")
+    with open(image_path, "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
 
-def extract_invoice_data_general(base64_image):
-    system_prompt = """
-    You are an OCR-like data extraction tool that extracts hotel invoice data from images.
-    Extract data grouped by themes (e.g. invoice details, guest, rooms, taxes) and output JSON. 
-    Maintain original language. Output blank/null fields if data is missing.
-    """
-    response = client.chat.completions.create(
-        model="meta-llama/llama-4-scout-17b-16e-instruct",
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "Extract invoice data."},
-                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}", "detail": "high"}}
-                ]
-            }
-        ],
-        temperature=0.0,
-    )
-    return response.choices[0].message.content
-
-# --- Extraction spécifique des virements
+# --- Extraction de données de virement
 def extract_invoice_data_virement(base64_image):
-    system_prompt = """
+    prompt = """
     Extract invoice data and return JSON with these exact fields:
     - payer: {name: string, account: string (8 digits)}
     - payee: {name: string, account: string (20 digits)}
@@ -96,7 +73,7 @@ def extract_invoice_data_virement(base64_image):
         model="meta-llama/llama-4-scout-17b-16e-instruct",
         response_format={"type": "json_object"},
         messages=[
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": prompt},
             {
                 "role": "user",
                 "content": [
@@ -107,23 +84,22 @@ def extract_invoice_data_virement(base64_image):
         ],
         temperature=0.0,
     )
-    return response.choices[0].message.content
+    return json.loads(response.choices[0].message.content)
 
-# --- Conversion montant en lettres → chiffre
+# --- Conversion texte montant → nombre
 def convert_french_amount(words):
+    words = words.lower().replace('dinars', '').replace('dinar', '').strip()
     french_numbers = {
         'zero': 0, 'un': 1, 'deux': 2, 'trois': 3, 'quatre': 4,
         'cinq': 5, 'six': 6, 'sept': 7, 'huit': 8, 'neuf': 9,
-        'dix': 10, 'onze': 11, 'douze': 12, 'treize': 13,
-        'quatorze': 14, 'quinze': 15, 'seize': 16,
-        'dix-sept': 17, 'dix-huit': 18, 'dix-neuf': 19,
-        'vingt': 20, 'trente': 30, 'quarante': 40,
+        'dix': 10, 'onze': 11, 'douze': 12, 'treize': 13, 'quatorze': 14,
+        'quinze': 15, 'seize': 16, 'dix-sept': 17, 'dix-huit': 18,
+        'dix-neuf': 19, 'vingt': 20, 'trente': 30, 'quarante': 40,
         'cinquante': 50, 'soixante': 60, 'soixante-dix': 70,
         'quatre-vingt': 80, 'quatre-vingt-dix': 90,
         'cent': 100, 'cents': 100, 'mille': 1000
     }
 
-    words = words.lower().replace('dinars', '').replace('dinar', '').strip()
     total = current = 0
     for word in words.split():
         if word in french_numbers:
@@ -136,7 +112,32 @@ def convert_french_amount(words):
                 current += val
     return total + current
 
-# --- Chatbot multilingue
+# --- Validation des champs
+def validate_data(data):
+    errors = []
+
+    payer_account = data.get("payer", {}).get("account", "")
+    if not (payer_account.isdigit() and len(payer_account) == 8):
+        errors.append("Compte payer invalide (8 chiffres requis)")
+
+    payee_account = data.get("payee", {}).get("account", "")
+    if not (payee_account.isdigit() and len(payee_account) == 20):
+        errors.append("Compte payee invalide (20 chiffres requis)")
+
+    try:
+        datetime.strptime(data.get("date", ""), "%d/%m/%Y")
+    except:
+        errors.append("Date invalide (format attendu : JJ/MM/AAAA)")
+
+    if "amount_words" in data:
+        montant_lettres = convert_french_amount(data["amount_words"])
+        montant_chiffre = data.get("amount", 0)
+        if abs(montant_chiffre - montant_lettres) > 1:
+            errors.append("Montant en lettres ne correspond pas au montant en chiffres")
+
+    return errors
+
+# --- Chatbot
 def generate_answer(user_question):
     try:
         lang = detect(user_question)
@@ -148,72 +149,62 @@ def generate_answer(user_question):
         questions = df["Profile_fr"].fillna('') + " - " + df["Question_fr"].fillna('')
         answers = df["Answer_fr"]
         profils = df["Profile_fr"]
-        intro_template = "🗣️ En tant que **{}**, tu peux :"
+        intro = "🗣️ En tant que **{}**, tu peux :"
     elif lang == "ar":
         questions = df["Profile_ar"].fillna('') + " - " + df["Question_ar"].fillna('')
         answers = df["Answer_ar"]
         profils = df["Profile_ar"]
-        intro_template = "🗣️ بصفتك **{}**، يمكنك :"
+        intro = "🗣️ بصفتك **{}**، يمكنك :"
     else:
         questions = df["Profile"].fillna('') + " - " + df["Question"].fillna('')
         answers = df["Answer"]
         profils = df["Profile"]
-        intro_template = "🗣️ As a **{}**, you can:"
+        intro = "🗣️ As a **{}**, you can:"
 
     input_embedding = model.encode([user_question])
-    nn_model = nn_models[lang]
-    _, index = nn_model.kneighbors(input_embedding)
-    answer = answers.iloc[index[0][0]]
-    profil = profils.iloc[index[0][0]]
-    intro = intro_template.format(profil)
-    return f"{intro}\n\n{answer}"
+    _, index = nn_models[lang].kneighbors(input_embedding)
+    return f"{intro.format(profils.iloc[index[0][0]])}\n\n{answers.iloc[index[0][0]]}"
 
-# --- Interface utilisateur Streamlit
-mode = st.sidebar.selectbox("Choisir le mode :", ["Chatbot Bancaire", "Extraction Facture Générale", "Extraction Virement"])
+# --- Interface
+mode = st.sidebar.radio("Choisir le mode :", ["Chatbot", "Extraction Virement"])
 
-if mode == "Chatbot Bancaire":
+if mode == "Chatbot":
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
-
-    if prompt := st.chat_input("Posez votre question..."):
+    if prompt := st.chat_input("Pose ta question bancaire..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
-
         response = generate_answer(prompt)
         st.session_state.messages.append({"role": "assistant", "content": response})
         with st.chat_message("assistant"):
             st.markdown(response)
 
-elif mode in ["Extraction Facture Générale", "Extraction Virement"]:
-    st.write("📤 Upload une image (PNG, JPG, JPEG) à analyser.")
-    uploaded_file = st.file_uploader("Choisissez une image...", type=["png", "jpg", "jpeg"])
-    if uploaded_file is not None:
-        temp_path = f"temp_{uploaded_file.name}"
-        with open(temp_path, "wb") as f:
+else:
+    uploaded_file = st.file_uploader("🖼️ Charge une image de virement", type=["png", "jpg", "jpeg"])
+    if uploaded_file:
+        tmp_path = f"tmp_{uploaded_file.name}"
+        with open(tmp_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
+        st.image(uploaded_file, caption="Image analysée", use_column_width=True)
 
-        st.image(uploaded_file, caption="Image uploadée", use_column_width=True)
-
-        if st.button("Extraire les données"):
-            with st.spinner("Extraction en cours..."):
-                base64_img = encode_image(temp_path)
+        if st.button("📄 Extraire et valider"):
+            with st.spinner("Analyse en cours..."):
                 try:
-                    if mode == "Extraction Facture Générale":
-                        json_data = extract_invoice_data_general(base64_img)
-                        st.json(json.loads(json_data))
-                    else:
-                        json_data = extract_invoice_data_virement(base64_img)
-                        parsed = json.loads(json_data)
-                        st.json(parsed)
+                    base64_img = encode_image(tmp_path)
+                    result = extract_invoice_data_virement(base64_img)
+                    st.subheader("📋 Données extraites")
+                    st.json(result)
 
-                        # Extra: Vérifier la cohérence montant ↔ montant en lettres
-                        if parsed.get("amount_words"):
-                            montant_calcule = convert_french_amount(parsed["amount_words"])
-                            st.write(f"💡 Montant converti depuis le texte : **{montant_calcule}** Dinars")
-                            if abs(montant_calcule - parsed.get("amount", 0)) > 1:
-                                st.warning("❗ Le montant en chiffres ne correspond pas au montant en lettres.")
+                    errors = validate_data(result)
+                    if not errors:
+                        st.success("✅ Données valides")
+                    else:
+                        st.error("❌ Données invalides :")
+                        for err in errors:
+                            st.markdown(f"- {err}")
+
                 except Exception as e:
-                    st.error(f"Erreur lors de l'extraction : {e}")
-            os.remove(temp_path)
+                    st.error(f"Erreur : {e}")
+            os.remove(tmp_path)
