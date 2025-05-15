@@ -70,7 +70,7 @@ if st.button("Obtenir la réponse"):
               intro = f"🗣️ En tant que **{profil}**, tu peux :"
             elif lang == 'ar':
               intro = f"🗣️ بصفتك **{profil}**، يمكنك :"
-           else:
+            else:
               intro = f"🗣️ As a **{profil}**, you can:"
 st.success(f"{intro}\n\n{answer}")
             st.info(f"📂 Classe : {classe}")
