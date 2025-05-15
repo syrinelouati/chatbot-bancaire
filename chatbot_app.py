@@ -6,11 +6,17 @@ from langdetect import detect
 import streamlit as st
 import os
 
-# Pour éviter les erreurs de surveillance des fichiers sur Streamlit Cloud
 os.environ["STREAMLIT_WATCHER_TYPE"] = "none"
 
-st.set_page_config(page_title="Chatbot Bancaire Multilingue", page_icon="🤖")
+# Titre de l'app
 st.title("🤖 Chatbot Bancaire Multilingue")
+
+# Chargement du modèle de phrases
+@st.cache_resource
+def load_model():
+    return SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+
+model = load_model()
 
 # Chargement des données
 @st.cache_data
@@ -20,62 +26,77 @@ def load_data():
         "Profile_fr", "Profile_ar", "Class_fr", "Class_ar",
         "Question_fr", "Question_ar", "Answer_fr", "Answer_ar"
     ])
-    df["full_question"] = df["Profile"].fillna('') + " - " + df["Question"].fillna('')
     return df
 
 df = load_data()
 
-# Encodage et modèle
+# Préparation des embeddings pour les 3 langues
 @st.cache_resource
-def build_model_and_embeddings(df):
-    model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
-    embeddings = model.encode(df["full_question"].tolist(), show_progress_bar=True)
-    nn_model = NearestNeighbors(n_neighbors=1, metric="cosine")
-    nn_model.fit(embeddings)
-    return model, nn_model, embeddings
+def build_embeddings(df):
+    embeddings = {
+        "fr": model.encode(df["Profile_fr"].fillna('') + " - " + df["Question_fr"].fillna(''), show_progress_bar=True),
+        "en": model.encode(df["Profile"].fillna('') + " - " + df["Question"].fillna(''), show_progress_bar=True),
+        "ar": model.encode(df["Profile_ar"].fillna('') + " - " + df["Question_ar"].fillna(''), show_progress_bar=True)
+    }
+    nn_models = {
+        lang: NearestNeighbors(n_neighbors=1, metric="cosine").fit(embeddings[lang])
+        for lang in embeddings
+    }
+    return embeddings, nn_models
 
-model, nn_model, question_embeddings = build_model_and_embeddings(df)
+embeddings, nn_models = build_embeddings(df)
 
 # Interface utilisateur
-user_input = st.text_area("❓ Posez votre question ")
+user_question = st.text_area("❓ Posez votre question bancaire")
 
 if st.button("Obtenir la réponse"):
-    if user_input:
+    if user_question:
         try:
-            # Détection de la langue
-            lang = detect(user_input)
+            lang = detect(user_question)
+        except:
+            lang = "fr"  # fallback si détection échoue
 
-            # Recherche de la meilleure correspondance
-            input_embedding = model.encode([user_input])
-            distance, index = nn_model.kneighbors(input_embedding)
-            row = df.iloc[index[0][0]]
+        if lang not in ["fr", "en", "ar"]:
+            lang = "fr"  # par défaut
 
-            # Récupération du profil et de la réponse adaptés à la langue
-            if lang == 'fr':
-                profil = row["Profile_fr"]
-                answer = row["Answer_fr"]
-                classe = row["Class_fr"]
-            elif lang == 'ar':
-                profil = row["Profile_ar"]
-                answer = row["Answer_ar"]
-                classe = row["Class_ar"]
-            else:
-                profil = row["Profile"]
-                answer = row["Answer"]
-                classe = row["Class"]
+        # Sélection des bonnes colonnes et embeddings
+        if lang == "fr":
+            questions = df["Profile_fr"].fillna('') + " - " + df["Question_fr"].fillna('')
+            answers = df["Answer_fr"]
+            profils = df["Profile_fr"]
+            classes = df["Class_fr"]
+        elif lang == "ar":
+            questions = df["Profile_ar"].fillna('') + " - " + df["Question_ar"].fillna('')
+            answers = df["Answer_ar"]
+            profils = df["Profile_ar"]
+            classes = df["Class_ar"]
+        else:
+            questions = df["Profile"].fillna('') + " - " + df["Question"].fillna('')
+            answers = df["Answer"]
+            profils = df["Profile"]
+            classes = df["Class"]
 
-            # Affichage
-            # Choisir l’intro selon la langue
-            if lang == 'fr':
-              intro = f"🗣️ En tant que **{profil}**, tu peux :"
-            elif lang == 'ar':
-              intro = f"🗣️ بصفتك **{profil}**، يمكنك :"
-            else:
-              intro = f"🗣️ As a **{profil}**, you can:"
-              st.success(f"{intro}\n\n{answer}")
-              st.info(f"📂 Classe : {classe}")
+        # Recherche de la réponse la plus proche
+        input_embedding = model.encode([user_question])
+        nn_model = nn_models[lang]
+        distance, index = nn_model.kneighbors(input_embedding)
 
-        except Exception as e:
-            st.error("Une erreur est survenue lors du traitement de votre question.")
+        answer = answers.iloc[index[0][0]]
+        profil = profils.iloc[index[0][0]]
+        class_name = classes.iloc[index[0][0]]
+
+        # Introduction en fonction de la langue
+        if lang == 'fr':
+            intro = f"🗣️ En tant que **{profil}**, tu peux :"
+            class_label = f"📂 Classe : {class_name}"
+        elif lang == 'ar':
+            intro = f"🗣️ بصفتك **{profil}**، يمكنك :"
+            class_label = f"📂 الفئة : {class_name}"
+        else:
+            intro = f"🗣️ As a **{profil}**, you can:"
+            class_label = f"📂 Class: {class_name}"
+
+        st.success(f"{intro}\n\n{answer}")
+        st.info(class_label)
     else:
-        st.warning("⚠️ Veuillez poser une question incluant votre profil (ex : client - je veux ouvrir un compte).")
+        st.warning("⚠️ Veuillez poser une question.")
