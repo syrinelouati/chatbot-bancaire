@@ -14,7 +14,7 @@ from sentence_transformers import SentenceTransformer
 from sklearn.neighbors import NearestNeighbors
 
 # CONFIG
-st.set_page_config(page_title="Chatbot Bancaire + Extraction Factures", layout="wide")
+st.set_page_config(page_title="Chatbot Bancaire + Extraction Virements", layout="wide")
 st.title("💬 Chatbot Bancaire")
 
 # === INITIALISATION CHATBOT ===
@@ -162,11 +162,11 @@ with tab1:
         st.success(df.iloc[idx][f"Answer_{lang}" if lang != "en" else "Answer"])
 
 with tab2:
-    st.subheader("Uploader une facture à analyser")
+    st.subheader("Uploader un virement à analyser")
     uploaded_file = st.file_uploader("📎 Déposez une image (.png/.jpg)", type=["png", "jpg", "jpeg"])
     if uploaded_file:
         base64_img = encode_image_file(uploaded_file)
-        st.image(uploaded_file, caption="Facture uploadée", use_column_width=True)
+        st.image(uploaded_file, caption="Virement uploadée", use_column_width=True)
         with st.spinner("🧠 Extraction en cours..."):
             extracted_data = extract_invoice_data(base64_img)
             st.json(extracted_data)
