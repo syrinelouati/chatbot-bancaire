@@ -1,65 +1,18 @@
-# -*- coding: utf-8 -*-
+from groq import Groq
 import os
 import json
 import base64
 from datetime import datetime
-from langdetect import detect
-import pandas as pd
-from sentence_transformers import SentenceTransformer
-from sklearn.neighbors import NearestNeighbors
-import streamlit as st
-from groq import Groq
 
-# --- Initialisation
-st.set_page_config(page_title="Chatbot & Extraction Virements", layout="centered")
-st.title("🏦 Chatbot Bancaire")
+# Initialize Groq client
+client = Groq(api_key="TON_API_KEY_ICI")  # Ne jamais exposer une vraie clé API en public
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-# Chargement données & modèles
-@st.cache_resource
-def load_model():
-    return SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
-
-@st.cache_data
-def load_data():
-    df = pd.read_csv("cleanedTranslatedBankFAQs.csv", usecols=[
-        "Question", "Answer", "Class", "Profile",
-        "Profile_fr", "Profile_ar", "Class_fr", "Class_ar",
-        "Question_fr", "Question_ar", "Answer_fr", "Answer_ar"
-    ])
-    return df
-
-model = load_model()
-df = load_data()
-
-@st.cache_resource
-def build_embeddings(df):
-    embeddings = {
-        "fr": model.encode(df["Profile_fr"].fillna('') + " - " + df["Question_fr"].fillna('')),
-        "en": model.encode(df["Profile"].fillna('') + " - " + df["Question"].fillna('')),
-        "ar": model.encode(df["Profile_ar"].fillna('') + " - " + df["Question_ar"].fillna(''))
-    }
-    nn_models = {
-        lang: NearestNeighbors(n_neighbors=1, metric="cosine").fit(embeddings[lang])
-        for lang in embeddings
-    }
-    return embeddings, nn_models
-
-embeddings, nn_models = build_embeddings(df)
-
-# Client Groq
-client = Groq(api_key="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")
-
-# --- Encodage image
 def encode_image(image_path):
-    with open(image_path, "rb") as f:
-        return base64.b64encode(f.read()).decode("utf-8")
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode("utf-8")
 
-# --- Extraction de données de virement
-def extract_invoice_data_virement(base64_image):
-    prompt = """
+def extract_invoice_data(base64_image):
+    system_prompt = """
     Extract invoice data and return JSON with these exact fields:
     - payer: {name: string, account: string (8 digits)}
     - payee: {name: string, account: string (20 digits)}
@@ -69,11 +22,12 @@ def extract_invoice_data_virement(base64_image):
     - reason: string
     Return null for missing fields. Maintain this structure exactly.
     """
+
     response = client.chat.completions.create(
         model="meta-llama/llama-4-scout-17b-16e-instruct",
         response_format={"type": "json_object"},
         messages=[
-            {"role": "system", "content": prompt},
+            {"role": "system", "content": system_prompt},
             {
                 "role": "user",
                 "content": [
@@ -84,22 +38,21 @@ def extract_invoice_data_virement(base64_image):
         ],
         temperature=0.0,
     )
-    return json.loads(response.choices[0].message.content)
+    return response.choices[0].message.content
 
-# --- Conversion texte montant → nombre
 def convert_french_amount(words):
-    words = words.lower().replace('dinars', '').replace('dinar', '').strip()
     french_numbers = {
         'zero': 0, 'un': 1, 'deux': 2, 'trois': 3, 'quatre': 4,
         'cinq': 5, 'six': 6, 'sept': 7, 'huit': 8, 'neuf': 9,
-        'dix': 10, 'onze': 11, 'douze': 12, 'treize': 13, 'quatorze': 14,
-        'quinze': 15, 'seize': 16, 'dix-sept': 17, 'dix-huit': 18,
-        'dix-neuf': 19, 'vingt': 20, 'trente': 30, 'quarante': 40,
+        'dix': 10, 'onze': 11, 'douze': 12, 'treize': 13,
+        'quatorze': 14, 'quinze': 15, 'seize': 16,
+        'dix-sept': 17, 'dix-huit': 18, 'dix-neuf': 19,
+        'vingt': 20, 'trente': 30, 'quarante': 40,
         'cinquante': 50, 'soixante': 60, 'soixante-dix': 70,
         'quatre-vingt': 80, 'quatre-vingt-dix': 90,
         'cent': 100, 'cents': 100, 'mille': 1000
     }
-
+    words = words.lower().replace('dinars', '').replace('dinar', '').strip()
     total = current = 0
     for word in words.split():
         if word in french_numbers:
@@ -112,99 +65,74 @@ def convert_french_amount(words):
                 current += val
     return total + current
 
-# --- Validation des champs
+def validate_name(name, name_type):
+    if not name or not str(name).strip():
+        return f"❌ Missing {name_type} name"
+    if len(str(name).strip()) < 2:
+        return f"❌ {name_type} name too short"
+    return f"✅ Valid {name_type} name"
+
+def validate_account(account, expected_len, acc_type):
+    if not account:
+        return f"❌ Missing {acc_type} account"
+    if len(str(account)) != expected_len:
+        return f"❌ Invalid {acc_type} account length (expected {expected_len}, got {len(str(account))})"
+    return f"✅ Valid {acc_type} account"
+
+def validate_date(date_str):
+    try:
+        datetime.strptime(date_str, "%d/%m/%Y")
+        return True
+    except (ValueError, TypeError):
+        return False
+
 def validate_data(data):
-    errors = []
+    print("\n--- VALIDATION ---")
 
-    payer_account = data.get("payer", {}).get("account", "")
-    if not (payer_account.isdigit() and len(payer_account) == 8):
-        errors.append("Compte payer invalide (8 chiffres requis)")
+    print(f"• {validate_name(data.get('payer', {}).get('name'), 'payer')}")
+    print(f"• {validate_name(data.get('payee', {}).get('name'), 'payee')}")
+    print(f"• {validate_account(data.get('payer', {}).get('account'), 8, 'payer')}")
+    print(f"• {validate_account(data.get('payee', {}).get('account'), 20, 'payee')}")
 
-    payee_account = data.get("payee", {}).get("account", "")
-    if not (payee_account.isdigit() and len(payee_account) == 20):
-        errors.append("Compte payee invalide (20 chiffres requis)")
+    date = data.get('date', '')
+    print("• ✅ Valid date" if validate_date(date) else "• ❌ Invalid or missing date")
 
-    try:
-        datetime.strptime(data.get("date", ""), "%d/%m/%Y")
-    except:
-        errors.append("Date invalide (format attendu : JJ/MM/AAAA)")
-
-    if "amount_words" in data:
-        montant_lettres = convert_french_amount(data["amount_words"])
-        montant_chiffre = data.get("amount", 0)
-        if abs(montant_chiffre - montant_lettres) > 1:
-            errors.append("Montant en lettres ne correspond pas au montant en chiffres")
-
-    return errors
-
-# --- Chatbot
-def generate_answer(user_question):
-    try:
-        lang = detect(user_question)
-    except:
-        lang = "fr"
-    if lang not in ["fr", "en", "ar"]:
-        lang = "fr"
-    if lang == "fr":
-        questions = df["Profile_fr"].fillna('') + " - " + df["Question_fr"].fillna('')
-        answers = df["Answer_fr"]
-        profils = df["Profile_fr"]
-        intro = "🗣️ En tant que **{}**, tu peux :"
-    elif lang == "ar":
-        questions = df["Profile_ar"].fillna('') + " - " + df["Question_ar"].fillna('')
-        answers = df["Answer_ar"]
-        profils = df["Profile_ar"]
-        intro = "🗣️ بصفتك **{}**، يمكنك :"
+    if 'amount' in data and 'amount_words' in data:
+        try:
+            converted = convert_french_amount(data['amount_words'])
+            if float(data['amount']) == converted:
+                print("• ✅ Amount matches")
+            else:
+                print(f"• ❌ Amount mismatch (value: {data['amount']}, words: {converted})")
+        except Exception as e:
+            print(f"• ❌ Amount validation error: {str(e)}")
     else:
-        questions = df["Profile"].fillna('') + " - " + df["Question"].fillna('')
-        answers = df["Answer"]
-        profils = df["Profile"]
-        intro = "🗣️ As a **{}**, you can:"
+        print("• ❌ Missing amount or amount_words")
 
-    input_embedding = model.encode([user_question])
-    _, index = nn_models[lang].kneighbors(input_embedding)
-    return f"{intro.format(profils.iloc[index[0][0]])}\n\n{answers.iloc[index[0][0]]}"
+def process_invoice(image_path, output_dir):
+    try:
+        base64_img = encode_image(image_path)
+        invoice_json = extract_invoice_data(base64_img)
+        data = json.loads(invoice_json)
 
-# --- Interface
-mode = st.sidebar.radio("Choisir le mode :", ["Chatbot", "Extraction Virement"])
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(
+            output_dir,
+            os.path.basename(image_path).replace(".jpg", ".json").replace(".png", ".json")
+        )
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
 
-if mode == "Chatbot":
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-    if prompt := st.chat_input("Pose ta question bancaire..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        response = generate_answer(prompt)
-        st.session_state.messages.append({"role": "assistant", "content": response})
-        with st.chat_message("assistant"):
-            st.markdown(response)
+        validate_data(data)
+        return output_path
+    except Exception as e:
+        print(f"Error processing invoice: {str(e)}")
+        return None
 
-else:
-    uploaded_file = st.file_uploader("🖼️ Charge une image de virement", type=["png", "jpg", "jpeg"])
-    if uploaded_file:
-        tmp_path = f"tmp_{uploaded_file.name}"
-        with open(tmp_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        st.image(uploaded_file, caption="Image analysée", use_column_width=True)
+# Configuration
+input_dir = "/content"
+output_dir = "/content/extracted_data"
 
-        if st.button("📄 Extraire et valider"):
-            with st.spinner("Analyse en cours..."):
-                try:
-                    base64_img = encode_image(tmp_path)
-                    result = extract_invoice_data_virement(base64_img)
-                    st.subheader("📋 Données extraites")
-                    st.json(result)
-
-                    errors = validate_data(result)
-                    if not errors:
-                        st.success("✅ Données valides")
-                    else:
-                        st.error("❌ Données invalides :")
-                        for err in errors:
-                            st.markdown(f"- {err}")
-
-                except Exception as e:
-                    st.error(f"Erreur : {e}")
-            os.remove(tmp_path)
+for filename in os.listdir(input_dir):
+    if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+        process_invoice(os.path.join(input_dir, filename), output_dir)
