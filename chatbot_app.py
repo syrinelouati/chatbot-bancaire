@@ -1,72 +1,74 @@
+# -*- coding: utf-8 -*-
 import pandas as pd
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, util
 from sklearn.neighbors import NearestNeighbors
-import streamlit as st
 from langdetect import detect
+import streamlit as st
 import os
 
+# Pour éviter les erreurs de surveillance des fichiers sur Streamlit Cloud
 os.environ["STREAMLIT_WATCHER_TYPE"] = "none"
 
+st.set_page_config(page_title="Chatbot Bancaire Multilingue", page_icon="🤖")
 st.title("🤖 Chatbot Bancaire Multilingue")
 
-# Charger uniquement les colonnes utiles
+# Chargement des données
 @st.cache_data
 def load_data():
     df = pd.read_csv("cleanedTranslatedBankFAQs.csv", usecols=[
         "Question", "Answer", "Class", "Profile",
-        "Profile_fr", "Profile_ar",
-        "Answer_fr", "Answer_ar",
-        "full_question"
+        "Profile_fr", "Profile_ar", "Class_fr", "Class_ar",
+        "Question_fr", "Question_ar", "Answer_fr", "Answer_ar"
     ])
     df["full_question"] = df["Profile"].fillna('') + " - " + df["Question"].fillna('')
     return df
 
 df = load_data()
 
-# Charger les embeddings pré-calculés
+# Encodage et modèle
 @st.cache_resource
 def build_model_and_embeddings(df):
     model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
-    embeddings = model.encode(df["full_question"].tolist(), show_progress_bar=False)
-    nn_model = NearestNeighbors(n_neighbors=3, metric="cosine")  # 3 voisins max
+    embeddings = model.encode(df["full_question"].tolist(), show_progress_bar=True)
+    nn_model = NearestNeighbors(n_neighbors=1, metric="cosine")
     nn_model.fit(embeddings)
     return model, nn_model, embeddings
 
-model, nn_model, embeddings = build_model_and_embeddings(df)
+model, nn_model, question_embeddings = build_model_and_embeddings(df)
 
 # Interface utilisateur
-user_question = st.text_area("❓ Posez votre question")
+user_input = st.text_area("❓ Posez votre question bancaire avec votre profil (ex : client - comment ouvrir un compte ?)")
 
 if st.button("Obtenir la réponse"):
-    if user_question.strip():
+    if user_input:
         try:
-            lang = detect(user_question)
-        except:
-            lang = "fr"  # défaut si détection échoue
+            # Détection de la langue
+            lang = detect(user_input)
 
-        # Encoder la question une seule fois
-        input_embedding = model.encode([user_question])
-        distances, indices = nn_model.kneighbors(input_embedding)
+            # Recherche de la meilleure correspondance
+            input_embedding = model.encode([user_input])
+            distance, index = nn_model.kneighbors(input_embedding)
+            row = df.iloc[index[0][0]]
 
-        # Prendre la réponse la plus proche
-        best_index = indices[0][0]
-        matched_row = df.iloc[best_index]
+            # Récupération du profil et de la réponse adaptés à la langue
+            if lang == 'fr':
+                profil = row["Profile_fr"]
+                answer = row["Answer_fr"]
+                classe = row["Class_fr"]
+            elif lang == 'ar':
+                profil = row["Profile_ar"]
+                answer = row["Answer_ar"]
+                classe = row["Class_ar"]
+            else:
+                profil = row["Profile"]
+                answer = row["Answer"]
+                classe = row["Class"]
 
-        # Détecter la langue et formuler la réponse adaptée
-        if lang == "fr":
-            response = matched_row["Answer_fr"]
-            profile = matched_row["Profile_fr"]
-            final_response = f"En tant que {profile}, tu peux {response}"
-        elif lang == "ar":
-            response = matched_row["Answer_ar"]
-            profile = matched_row["Profile_ar"]
-            final_response = f"بصفتك {profile}، يمكنك {response}"
-        else:
-            response = matched_row["Answer"]
-            profile = matched_row["Profile"]
-            final_response = f"As a {profile}, you can {response}"
+            # Affichage
+            st.success(f"🗣️ En tant que **{profil}**, tu peux :\n\n{answer}")
+            st.info(f"📂 Classe : {classe}")
 
-        st.success(f"**Réponse :** {final_response}")
-        st.info(f"📂 **Classe détectée :** {matched_row['Class']}")
+        except Exception as e:
+            st.error("Une erreur est survenue lors du traitement de votre question.")
     else:
-        st.warning("⚠️ Veuillez poser une question.")
+        st.warning("⚠️ Veuillez poser une question incluant votre profil (ex : client - je veux ouvrir un compte).")
