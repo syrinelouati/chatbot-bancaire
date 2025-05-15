@@ -3,6 +3,8 @@ import os
 import json
 import base64
 from datetime import datetime
+from PIL import Image
+import io
 
 # Initialize Groq client
 client = Groq(api_key="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")
@@ -12,17 +14,17 @@ def encode_image(image_path):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode("utf-8")
 
-def extract_invoice_data(base64_image):
-    """Extract invoice data with specific field requirements"""
+def extract_transfer_data(base64_image):
+    """Extract bank transfer data with specific field requirements"""
     system_prompt = """
-    Extract invoice data and return JSON with these exact fields:
-    - payer: {name: string, account: string (8 digits)}
-    - payee: {name: string, account: string (20 digits)}
+    Tu es un expert en lecture automatique de documents bancaires. Extrait les données d’un virement bancaire à partir d’une image et retourne un JSON contenant exactement les champs suivants :
+    - payer: {name: string, account: string (8 chiffres)}
+    - payee: {name: string, account: string (20 chiffres)}
     - date: string (format DD/MM/YYYY)
     - amount: number
-    - amount_words: string (French)
+    - amount_words: string (en toutes lettres en français)
     - reason: string
-    Return null for missing fields. Maintain this structure exactly.
+    Si une information est manquante, retourne "null" pour cette information. Garde exactement cette structure.
     """
 
     response = client.chat.completions.create(
@@ -33,7 +35,7 @@ def extract_invoice_data(base64_image):
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "Extract all invoice data"},
+                    {"type": "text", "text": "Extrait les données du virement bancaire ci-joint"},
                     {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}}
                 ]
             }
@@ -55,10 +57,10 @@ def convert_french_amount(words):
         'quatre-vingt': 80, 'quatre-vingt-dix': 90,
         'cent': 100, 'cents': 100, 'mille': 1000
     }
-   
+
     words = words.lower().replace('dinars', '').replace('dinar', '').strip()
     total = current = 0
-   
+
     for word in words.split():
         if word in french_numbers:
             val = french_numbers[word]
@@ -80,7 +82,7 @@ def validate_date(date_str):
 
 def validate_and_display(data):
     """Perform all validations and display results"""
-    print("\n--- EXTRACTED DATA ---")
+    print("\n--- DONNÉES EXTRACTÉES ---")
     for section, content in data.items():
         print(f"\n{section.title()}:")
         if isinstance(content, dict):
@@ -89,48 +91,50 @@ def validate_and_display(data):
         else:
             print(f"  {content if content is not None else 'null'}")
 
-    print("\n--- VALIDATION RESULTS ---")
+    print("\n--- RÉSULTATS DE VALIDATION ---")
 
     def validate_account(account, expected_len, acc_type):
         if not account:
-            return f"❌ Missing {acc_type} account"
+            return f"❌ {acc_type} manquant"
         if len(str(account)) != expected_len:
-            return f"❌ Invalid {acc_type} account length (expected {expected_len}, got {len(str(account))})"
-        return f"✅ Valid {acc_type} account"
+            return f"❌ Longueur invalide pour {acc_type} (attendue: {expected_len}, obtenue: {len(str(account))})"
+        return f"✅ {acc_type} valide"
 
-    payer_valid = validate_account(data.get('payer', {}).get('account'), 8, 'payer')
-    payee_valid = validate_account(data.get('payee', {}).get('account'), 20, 'payee')
+    payer_valid = validate_account(data.get('payer', {}).get('account'), 8, 'compte payeur')
+    payee_valid = validate_account(data.get('payee', {}).get('account'), 20, 'compte bénéficiaire')
 
     date_valid = (
-        "✅ Valid date" if validate_date(data.get('date', ''))
-        else "❌ Invalid or missing date (required format: DD/MM/YYYY)"
+        "✅ Date valide" if validate_date(data.get('date', ''))
+        else "❌ Date invalide ou manquante (format attendu: JJ/MM/AAAA)"
     )
 
-    amount_valid = "❌ Missing amount information"
+    amount_valid = "❌ Informations de montant manquantes"
     if 'amount' in data and 'amount_words' in data:
         try:
             converted = convert_french_amount(data['amount_words'])
             if float(data['amount']) == converted:
-                amount_valid = "✅ Amount matches"
+                amount_valid = "✅ Montant cohérent"
             else:
-                amount_valid = f"❌ Amount mismatch (numbers: {data['amount']}, words convert to: {converted})"
+                amount_valid = f"❌ Montant incohérent (chiffre: {data['amount']}, en lettres: {converted})"
         except Exception as e:
-            amount_valid = f"❌ Amount validation error: {str(e)}"
+            amount_valid = f"❌ Erreur de validation du montant: {str(e)}"
 
     print(f"• {payer_valid}")
     print(f"• {payee_valid}")
     print(f"• {date_valid}")
     print(f"• {amount_valid}")
 
-def process_invoice(image_path, output_dir):
-    """Process single invoice image"""
+def process_transfer(image_path, output_dir):
+    """Process a single bank transfer image"""
     try:
-        print(f"\nProcessing: {os.path.basename(image_path)}")
+        print(f"\nTraitement de : {os.path.basename(image_path)}")
 
+        # Encode and extract
         base64_img = encode_image(image_path)
-        invoice_json = extract_invoice_data(base64_img)
-        data = json.loads(invoice_json)
+        transfer_json = extract_transfer_data(base64_img)
+        data = json.loads(transfer_json)
 
+        # Save result
         os.makedirs(output_dir, exist_ok=True)
         output_path = os.path.join(
             output_dir,
@@ -140,17 +144,19 @@ def process_invoice(image_path, output_dir):
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
 
+        # Validate and print
         validate_and_display(data)
         return output_path
 
     except Exception as e:
-        print(f"Error processing invoice: {str(e)}")
+        print(f"Erreur lors du traitement du virement : {str(e)}")
         return None
 
-if __name__ == "__main__":
-    input_dir = "/content"
-    output_dir = "/content/extracted_data"
+# Configuration
+input_dir = "/content"
+output_dir = "/content/extracted_data"
 
-    for filename in os.listdir(input_dir):
-        if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
-            process_invoice(os.path.join(input_dir, filename), output_dir)
+# Process all transfer images
+for filename in os.listdir(input_dir):
+    if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+        process_transfer(os.path.join(input_dir, filename), output_dir)
