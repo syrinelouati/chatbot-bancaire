@@ -61,8 +61,8 @@ def encode_image_file(uploaded_file):
 def extract_payement_data(base64_image):
     system_prompt = """
     Extract payement data and return JSON with these exact fields:
-    - Orderingparty: {name: string, account: string (8 digits)}
-    - Payableto: {name: string, account: string (20 digits)}
+    - payer: {name: string, account: string (8 digits)}
+    - payee: {name: string, account: string (20 digits)}
     - date: string (format DD/MM/YYYY)
     - amount: number
     - amount_words: string (French)
