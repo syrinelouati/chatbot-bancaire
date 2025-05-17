@@ -57,19 +57,18 @@ client = Groq(api_key="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"
 def encode_image_file(uploaded_file):
     return base64.b64encode(uploaded_file.read()).decode("utf-8")
  
-def extract_payement_data(base64_image):
+def extract_invoice_data(base64_image):
     system_prompt = """
     Extract payement data and return JSON with these exact fields:
     - payer: {name: string, account: string (8 digits)}
     - payee: {name: string, account: string (20 digits)}
     - date: string (format DD/MM/YYYY)
+    - amount: number
     - amount_words: string (French)
     - reason: string
- 
     Return null for missing fields. Maintain this structure exactly.
     """
  
-#Appelle LLaMA 4 via Groq pour extraire les données d’un virement bancaire à partir d’une image base64
     response = client.chat.completions.create(
         model="meta-llama/llama-4-scout-17b-16e-instruct",
         response_format={"type": "json_object"},
@@ -87,7 +86,6 @@ def extract_payement_data(base64_image):
     )
     return json.loads(response.choices[0].message.content)
  
-#Convertit un montant écrit en lettres françaises en nombre
 def convert_french_amount(words):
     french_numbers = {
         'zero': 0, 'un': 1, 'deux': 2, 'trois': 3, 'quatre': 4,
@@ -101,10 +99,6 @@ def convert_french_amount(words):
         'cent': 100, 'cents': 100, 'mille': 1000
     }
  
- 
-#- Transforme la chaîne en **minuscules**.
-#- Supprime les mots "dinar" ou "dinars" s'ils sont présents.
-#- Supprime les espaces en début/fin.
     words = words.lower().replace('dinars', '').replace('dinar', '').strip()
     total = current = 0
     for word in words.split():
@@ -118,7 +112,6 @@ def convert_french_amount(words):
                 current += val
     return total + current
  
-#Vérifie le format de la date
 def validate_date(date_str):
     try:
         datetime.strptime(date_str, "%d/%m/%Y")
@@ -126,13 +119,22 @@ def validate_date(date_str):
     except:
         return False
  
-def validate_payement_fields(data):
+def validate_invoice_fields(data):
     results = []
     results.append("✅ Payer name" if data['payer']['name'] else "❌ Missing payer name")
     results.append("✅ Payee name" if data['payee']['name'] else "❌ Missing payee name")
     results.append("✅ Payer account" if data['payer']['account'] and len(data['payer']['account']) == 8 else "❌ Invalid payer account")
     results.append("✅ Payee account" if data['payee']['account'] and len(data['payee']['account']) == 20 else "❌ Invalid payee account")
     results.append("✅ Valid date" if validate_date(data['date']) else "❌ Invalid or missing date")
+    try:
+        converted = convert_french_amount(data['amount_words'])
+        if float(data['amount']) == converted:
+            results.append("✅ Amount matches")
+        else:
+            results.append(f"❌ Amount mismatch")
+    except:
+        results.append("❌ Amount parsing error")
+    return results
  
 # === INTERFACE STREAMLIT ===
 tab1, tab2 = st.tabs(["📩 Chatbot Bancaire", "📤 Extraction Virements"])
@@ -169,9 +171,9 @@ with tab2:
         base64_img = encode_image_file(uploaded_file)
         st.image(uploaded_file, caption="Virement uploadée", use_column_width=True)
         with st.spinner("🧠 Extraction en cours..."):
-            extracted_data = extract_payement_data(base64_img)
+            extracted_data = extract_invoice_data(base64_img)
             st.json(extracted_data)
             st.markdown("### ✅ Résultats de validation")
-            for check in validate_payement_fields(extracted_data):
+            for check in validate_invoice_fields(extracted_data):
                 st.write(f"- {check}")
 st.image("https://cdn-icons-png.flaticon.com/512/4712/4712109.png", width=60)
