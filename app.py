@@ -122,7 +122,7 @@ def validate_invoice_fields(data):
     results.append("✅ Payer account" if data['payer']['account'] and len(data['payer']['account']) == 8 else "❌ Invalid payer account")
     results.append("✅ Payee account" if data['payee']['account'] and len(data['payee']['account']) == 20 else "❌ Invalid payee account")
     results.append("✅ Valid date" if validate_date(data['date']) else "❌ Invalid or missing date")
-
+    return results
 # === INTERFACE STREAMLIT ===
 tab1, tab2 = st.tabs(["📩 Chatbot Bancaire", "📤 Extraction Virements"])
 
