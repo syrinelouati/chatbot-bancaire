@@ -130,11 +130,11 @@ def validate_date(date_str):
         return False
 
 def validate_payement_fields(data):
-    results = []
-    results.append("✅ Orderingparty name" if data['Orderingparty']['name'] else "❌ Missing ordering party")
-    results.append("✅ Payableto name" if data['Payableto']['name'] else "❌ Missing payable to")
-    results.append("✅ Orderingparty account" if data['Orderingparty']['account'] and len(data['Orderingparty']['account']) == 8 else "❌ Invalid Orderingparty account")
-    results.append("✅ Payableto account" if data['Payableto']['account'] and len(data['Payableto']['account']) == 20 else "❌ Invalid Payableto account")
+results = []
+    results.append("✅ Payer name" if data['payer']['name'] else "❌ Missing payer name")
+    results.append("✅ Payee name" if data['payee']['name'] else "❌ Missing payee name")
+    results.append("✅ Payer account" if data['payer']['account'] and len(data['payer']['account']) == 8 else "❌ Invalid payer account")
+    results.append("✅ Payee account" if data['payee']['account'] and len(data['payee']['account']) == 20 else "❌ Invalid payee account")
     results.append("✅ Valid date" if validate_date(data['date']) else "❌ Invalid or missing date")
     try:
         converted = convert_french_amount(data['amount_words'])
