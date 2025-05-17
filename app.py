@@ -130,7 +130,7 @@ def validate_date(date_str):
         return False
 
 def validate_payement_fields(data):
-results = []
+    results = []
     results.append("✅ Payer name" if data['payer']['name'] else "❌ Missing payer name")
     results.append("✅ Payee name" if data['payee']['name'] else "❌ Missing payee name")
     results.append("✅ Payer account" if data['payer']['account'] and len(data['payer']['account']) == 8 else "❌ Invalid payer account")
