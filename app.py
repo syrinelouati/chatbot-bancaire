@@ -257,6 +257,6 @@ with tab2:
             extracted_data = extract_payement_data(base64_img)
             st.json(extracted_data)
             st.markdown("### ✅ Résultats de validation")
-            for check in process_invoice(image_path, output_dir):
+            for check in process_invoice(base64_img):
                 st.write(f"- {check}")
 st.image("https://cdn-icons-png.flaticon.com/512/4712/4712109.png", width=60)
