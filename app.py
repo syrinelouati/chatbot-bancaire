@@ -60,7 +60,6 @@ def extract_invoice_data(base64_image):
     - payer: {name: string, account: string (8 digits)}
     - payee: {name: string, account: string (20 digits)}
     - date: string (format DD/MM/YYYY)
-    - amount: number
     - amount_words: string (French)
     - reason: string
     Return null for missing fields. Maintain this structure exactly.
