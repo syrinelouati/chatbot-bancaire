@@ -64,7 +64,6 @@ def extract_payement_data(base64_image):
     - payer: {name: string, account: string (8 digits)}
     - payee: {name: string, account: string (20 digits)}
     - date: string (format DD/MM/YYYY)
-    - amount: number
     - amount_words: string (French)
     - reason: string
 
@@ -136,15 +135,6 @@ def validate_payement_fields(data):
     results.append("✅ Payer account" if data['payer']['account'] and len(data['payer']['account']) == 8 else "❌ Invalid payer account")
     results.append("✅ Payee account" if data['payee']['account'] and len(data['payee']['account']) == 20 else "❌ Invalid payee account")
     results.append("✅ Valid date" if validate_date(data['date']) else "❌ Invalid or missing date")
-    try:
-        converted = convert_french_amount(data['amount_words'])
-        if float(data['amount']) == converted:
-            results.append("✅ Amount matches")
-        else:
-            results.append(f"❌ Amount mismatch")
-    except:
-        results.append("❌ Amount parsing error")
-    return results
 
 # === INTERFACE STREAMLIT ===
 tab1, tab2 = st.tabs(["📩 Chatbot Bancaire", "📤 Extraction Virements"])
