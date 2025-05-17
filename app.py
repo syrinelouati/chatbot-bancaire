@@ -6,22 +6,22 @@ import pandas as pd
 from datetime import datetime
 from PIL import Image
 import io
- 
+
 import streamlit as st
 from groq import Groq
 from langdetect import detect
 from sentence_transformers import SentenceTransformer
 from sklearn.neighbors import NearestNeighbors
- 
+
 # Configuration de la page Streamlit
 st.set_page_config(page_title="Chatbot Bancaire + Extraction Virements", layout="wide")
 st.title("💬 Chatbot Bancaire")
- 
+
 # === INITIALISATION CHATBOT ===
 @st.cache_resource
 def load_model():
     return SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
- 
+
 @st.cache_data
 def load_data():
     return pd.read_csv("cleanedTranslatedBankFAQs.csv", usecols=[
@@ -29,10 +29,10 @@ def load_data():
         "Profile_fr", "Profile_ar", "Class_fr", "Class_ar",
         "Question_fr", "Question_ar", "Answer_fr", "Answer_ar"
     ])
- 
+
 model = load_model()
 df = load_data()
- 
+
 @st.cache_resource
 def build_embeddings(df):
     embeddings = {
@@ -40,23 +40,20 @@ def build_embeddings(df):
         "en": model.encode(df["Profile"].fillna('') + " - " + df["Question"].fillna('')),
         "ar": model.encode(df["Profile_ar"].fillna('') + " - " + df["Question_ar"].fillna(''))
     }
-    #Entraînement d'un modèle de plus proche voisin (KNN) par langue pour retrouver la question la plus similaire
     nn_models = {
         lang: NearestNeighbors(n_neighbors=1, metric="cosine").fit(embeddings[lang])
         for lang in embeddings
     }
     return embeddings, nn_models
- 
+
 embeddings, nn_models = build_embeddings(df)
- 
+
 # === INITIALISATION EXTRACTION virement ===
- 
-#Initialise le client avec la clé API Groq pour utiliser le modèle LLaMA.
 client = Groq(api_key="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")
- 
+
 def encode_image_file(uploaded_file):
     return base64.b64encode(uploaded_file.read()).decode("utf-8")
- 
+
 def extract_invoice_data(base64_image):
     system_prompt = """
     Extract payement data and return JSON with these exact fields:
@@ -68,7 +65,7 @@ def extract_invoice_data(base64_image):
     - reason: string
     Return null for missing fields. Maintain this structure exactly.
     """
- 
+
     response = client.chat.completions.create(
         model="meta-llama/llama-4-scout-17b-16e-instruct",
         response_format={"type": "json_object"},
@@ -85,7 +82,7 @@ def extract_invoice_data(base64_image):
         temperature=0.0,
     )
     return json.loads(response.choices[0].message.content)
- 
+
 def convert_french_amount(words):
     french_numbers = {
         'zero': 0, 'un': 1, 'deux': 2, 'trois': 3, 'quatre': 4,
@@ -98,7 +95,7 @@ def convert_french_amount(words):
         'quatre-vingt': 80, 'quatre-vingt-dix': 90,
         'cent': 100, 'cents': 100, 'mille': 1000
     }
- 
+
     words = words.lower().replace('dinars', '').replace('dinar', '').strip()
     total = current = 0
     for word in words.split():
@@ -111,14 +108,14 @@ def convert_french_amount(words):
             else:
                 current += val
     return total + current
- 
+
 def validate_date(date_str):
     try:
         datetime.strptime(date_str, "%d/%m/%Y")
         return True
     except:
         return False
- 
+
 def validate_invoice_fields(data):
     results = []
     results.append("✅ Payer name" if data['payer']['name'] else "❌ Missing payer name")
@@ -135,14 +132,13 @@ def validate_invoice_fields(data):
     except:
         results.append("❌ Amount parsing error")
     return results
- 
+
 # === INTERFACE STREAMLIT ===
 tab1, tab2 = st.tabs(["📩 Chatbot Bancaire", "📤 Extraction Virements"])
- 
+
 with tab1:
     st.subheader("💬 Assistant Bancaire Intelligent")
- 
-    # Greeting selon l'heure
+
     now = datetime.now().hour
     if now < 12:
         greeting = "☀️ Bonjour !"
@@ -150,12 +146,11 @@ with tab1:
         greeting = "🌤️ Bon après-midi !"
     else:
         greeting = "🌙 Bonsoir !"
- 
+
     st.markdown(f"### {greeting} Comment puis-je vous aider aujourd’hui ?")
- 
-    # Zone de question
+
     user_input = st.text_input("💡 Posez une question bancaire ci-dessous :")
- 
+
     if user_input:
         lang = detect(user_input)
         query = model.encode(user_input)
@@ -163,7 +158,7 @@ with tab1:
         idx = indices[0][0]
         st.write("### 📌 Réponse suggérée :")
         st.success(df.iloc[idx][f"Answer_{lang}" if lang != "en" else "Answer"])
- 
+
 with tab2:
     st.subheader("Uploader un virement à analyser")
     uploaded_file = st.file_uploader("📎 Déposez une image (.png/.jpg)", type=["png", "jpg", "jpeg"])
@@ -172,8 +167,17 @@ with tab2:
         st.image(uploaded_file, caption="Virement uploadée", use_column_width=True)
         with st.spinner("🧠 Extraction en cours..."):
             extracted_data = extract_invoice_data(base64_img)
-            st.json(extracted_data)
+
+            # Affichage personnalisé sans amount
+            st.markdown("### 📄 Données extraites (sans le montant)")
+            st.write(f"👤 Payer : {extracted_data['payer']['name']} ({extracted_data['payer']['account']})")
+            st.write(f"👤 Payee : {extracted_data['payee']['name']} ({extracted_data['payee']['account']})")
+            st.write(f"📅 Date : {extracted_data['date']}")
+            st.write(f"💬 Raison : {extracted_data['reason']}")
+            st.write(f"💶 Montant en lettres : {extracted_data['amount_words']}")
+
             st.markdown("### ✅ Résultats de validation")
             for check in validate_invoice_fields(extracted_data):
                 st.write(f"- {check}")
+
 st.image("https://cdn-icons-png.flaticon.com/512/4712/4712109.png", width=60)
