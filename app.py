@@ -128,13 +128,96 @@ def validate_date(date_str):
     except:
         return False
 
-def validate_payement_fields(data):
-    results = []
-    results.append("✅ Payer name" if data['payer']['name'] else "❌ Missing payer name")
-    results.append("✅ Payee name" if data['payee']['name'] else "❌ Missing payee name")
-    results.append("✅ Payer account" if data['payer']['account'] and len(data['payer']['account']) == 8 else "❌ Invalid payer account")
-    results.append("✅ Payee account" if data['payee']['account'] and len(data['payee']['account']) == 20 else "❌ Invalid payee account")
-    results.append("✅ Valid date" if validate_date(data['date']) else "❌ Invalid or missing date")
+def validate_name(name, name_type):
+    """Validate payer/payee name"""
+    if not name or not str(name).strip():
+        return f"❌ Missing {name_type} name"
+    if len(str(name).strip()) < 2:
+        return f"❌ {name_type} name too short"
+    return f"✅ Valid {name_type} name"
+ 
+def validate_and_display(data):
+    """Perform all validations and display results"""
+    print("\n--- EXTRACTED DATA ---")
+    for section, content in data.items():
+        print(f"\n{section.title()}:")
+        if isinstance(content, dict):
+            for k, v in content.items():
+                print(f"  {k.title()}: {v if v is not None else 'null'}")
+        else:
+            print(f"  {content if content is not None else 'null'}")
+ 
+    print("\n--- VALIDATION RESULTS ---")
+ 
+    # 1. Name validation
+    payer_name_valid = validate_name(data.get('payer', {}).get('name'), 'payer')
+    payee_name_valid = validate_name(data.get('payee', {}).get('name'), 'payee')
+ 
+    # 2. Account number validation
+    def validate_account(account, expected_len, acc_type):
+        if not account:
+            return f"❌ Missing {acc_type} account"
+        if len(str(account)) != expected_len:
+            return f"❌ Invalid {acc_type} account length (expected {expected_len}, got {len(str(account))})"
+        return f"✅ Valid {acc_type} account"
+ 
+    payer_account_valid = validate_account(data.get('payer', {}).get('account'), 8, 'payer')
+    payee_account_valid = validate_account(data.get('payee', {}).get('account'), 20, 'payee')
+ 
+    # 3. Date validation
+    date_valid = (
+        "✅ Valid date" if validate_date(data.get('date', ''))
+        else "❌ Invalid or missing date (required format: DD/MM/YYYY)"
+    )
+ 
+    # 4. Amount validation
+    # amount_valid = "❌ Missing amount information"
+    # if 'amount' in data and 'amount_words' in data:
+    #     try:
+    #         converted = convert_french_amount(data['amount_words'])
+    #         if float(data['amount']) == converted:
+    #             amount_valid = "✅ Amount matches"
+    #         else:
+    #             amount_valid = f"❌ Amount mismatch "
+    #     except Exception as e:
+    #         amount_valid = f"❌ Amount validation error: {str(e)}"
+ 
+    # Print all validation results
+    print(f"• {payer_name_valid}")
+    print(f"• {payee_name_valid}")
+    print(f"• {payer_account_valid}")
+    print(f"• {payee_account_valid}")
+    print(f"• {date_valid}")
+    # print(f"• {amount_valid}")
+ 
+def process_invoice(image_path, output_dir):
+    """Process single invoice image"""
+    try:
+        print(f"\nProcessing: {os.path.basename(image_path)}")
+ 
+        # Extract data
+        base64_img = encode_image(image_path)
+        invoice_json = extract_invoice_data(base64_img)
+        data = json.loads(invoice_json)
+ 
+        # Save JSON
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(
+            output_dir,
+            os.path.basename(image_path).replace(".jpg", ".json").replace(".png", ".json")
+        )
+ 
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+ 
+        # Validate and display
+        validate_and_display(data)
+        return output_path
+ 
+    except Exception as e:
+        print(f"Error processing invoice: {str(e)}")
+        return None
+ 
 
 # === INTERFACE STREAMLIT ===
 tab1, tab2 = st.tabs(["📩 Chatbot Bancaire", "📤 Extraction Virements"])
