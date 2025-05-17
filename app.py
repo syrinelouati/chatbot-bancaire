@@ -147,9 +147,15 @@ with tab1:
         query = model.encode(user_input)
         distances, indices = nn_models[lang].kneighbors([query])
         idx = indices[0][0]
+        profile_col = f"Profile_{lang}" if lang != "en" else "Profile"
+        profile_txt = df.iloc[idx][profile_col]
+        # Afficher le profil
+        st.write("### 🏷️ Profil concerné :")
+        st.info(profile_txt)
+        
+        answer_col = f"Answer_{lang}" if lang != "en" else "Answer"
         st.write("### 📌 Réponse suggérée :")
-        st.success(df.iloc[idx][f"Answer_{lang}" if lang != "en" else "Answer"])
-
+        st.success(df.iloc[idx][answer_col])
 with tab2:
     st.subheader("Uploader un virement à analyser")
     uploaded_file = st.file_uploader("📎 Déposez une image (.png/.jpg)", type=["png", "jpg", "jpeg"])
