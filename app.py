@@ -18,7 +18,7 @@ st.set_page_config(page_title="Chatbot Bancaire + Extraction Virements", layout=
 # Affichage du logo et titre personnalisé
 col1, col2 = st.columns([0.15, 0.85])
 with col1:
-    st.image("logo.png", width=60) 
+    st.image("https://github.com/syrinelouati/chatbot-bancaire/blob/main/logo.png", width=60)
 with col2:
     st.markdown("<h1 style='margin-top: 10px;'>BankMate Chatbot</h1>", unsafe_allow_html=True)
 
