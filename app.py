@@ -15,15 +15,7 @@ from sklearn.neighbors import NearestNeighbors
 
 # Configuration de la page Streamlit
 st.set_page_config(page_title="Chatbot Bancaire + Extraction Virements", layout="wide")
-# Chargement du logo depuis l'image locale uploadée
-logo = Image.open("/mnt/data/b75bc64c-26e7-4964-835a-405fb1ad57fb.png")
-
-# Affichage du logo et du titre personnalisé
-col1, col2 = st.columns([0.15, 0.85])
-with col1:
-    st.image(logo, width=60)
-with col2:
-    st.markdown("<h1 style='margin-top: 10px;'>BankMate Chatbot</h1>", unsafe_allow_html=True)
+st.title("🤖🏦 BankMate Chatbot")
 
 
 # === INITIALISATION CHATBOT ===
