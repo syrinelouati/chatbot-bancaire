@@ -49,7 +49,7 @@ def build_embeddings(df):
 embeddings, nn_models = build_embeddings(df)
 
 # === INITIALISATION EXTRACTION virement ===
-client = Groq(api_key="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")
+client = Groq(api_key="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")
 
 def encode_image_file(uploaded_file):
     return base64.b64encode(uploaded_file.read()).decode("utf-8")
